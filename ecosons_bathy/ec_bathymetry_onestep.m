@@ -1,0 +1,250 @@
+%[err,err_desc]=ec_bathymetry_onestep()
+%creates a BATHYMETRY object on the fly from selected RAW files
+%the purpose of this menu is to avoid whole echogram storage
+%no arguments required
+%returns error code and description
+%CALLS: 
+function [err, err_desc]=ec_bathymetry_onestep
+ global BATHYMETRY
+ global SONAR_DATA
+ global SONAR_DATA_SELECTION
+ err=0;
+ err_desc='';
+
+ %remove echogram data
+ if( iscell(SONAR_DATA) )
+  clear SONAR_DATA
+  clear SONAR_DATA_SELECTION
+ endif
+
+ %ADAPTED FROM ec_load.m, ec_bathymetry_bottom.m AND ec_bathymetry_bathymetry.m
+ 
+ %file format (echosounder type)
+ sel=gmmenu('Load data source format:',...
+            'Simrad RAW',...   %1
+            'Lowrance SLG',...         %2
+            'Quit');                   %final
+
+
+ %channel selection
+ switch( sel )
+ 
+  case 1
+   fmtfn=@fmt_simradRAW;
+   channel=gminput('Select echosounder channel (default: 1):');
+   if( length(channel)~=1 )
+    channel=1;
+   endif
+  case 1
+   fmtfn=@fmt_lowranceSLG;
+   channel=1;
+  otherwise
+   err=-1;
+   return;
+ endswitch
+ 
+ %speed-up file loading
+ smt=gminput('Use preloaded MAT files if available? (Y/n) ', 's');
+ if( length(smt)==0 )
+  smt=true;
+ elseif( smt(1)=='Y' || smt(1)=='y' )
+  smt=true;
+ else
+  smt=false;
+ endif
+
+ %multiple files by pattern
+ patt=gminput('Input RAW file(s) pattern: ', 's');
+ f_dir_raw=glob( patt );
+ 
+ if( length(f_dir_raw)==0 )
+  err_desc='No file matched the pattern';
+  err=1;
+  return;
+ endif
+
+ %bottom detection algorithm
+ sba=gmmenu('Bottom detection algorithm:',...
+            'Echosounder bottom detection (if available)',... %1
+            'Averaged bounce',... %2
+            'Max+threshold',...   %3
+            'Quit'...             %4
+            );
+
+ %input bottom line procedure parameters
+ switch sba
+
+  case 2 %Averaged bounce
+
+   %near field (surface reberberation; no depth smaller)
+   dep0=gminput('Near field approx. (default 1.0 m): ');
+   if( length(dep0)!=1 )
+    dep0=1.0;
+   endif
+
+  case 3 %Max+threshold
+
+   %main threshold
+   ndB =gminput('First threshold (default 30 dB):  ');
+   if( length(ndB)!=1 )
+    ndB=30;
+   endif
+
+   %second threshold
+   nndB=gminput('Second threshold (default 60 dB): ');
+   if( length(nndB)!=1 )
+    nndB=60;
+   endif
+
+   %check thresholds
+   if( ~(length(ndB)==1 && length(nndB)==1 && ndB<nndB) )
+
+    err=1;
+    err_desc='Invalid threshold selection';
+
+    return;
+   endif
+
+   %near field (surface reberberation; no depth smaller)
+   dep0=gminput('Near field approx. (default 1.0 m): ');
+   if( length(dep0)!=1 )
+    dep0=1.0;
+   endif
+
+  otherwise %Quit
+   err=-1;
+   return;
+
+ endswitch
+
+
+ if( sba > 1 )
+  %smoothing algorithm: ping radius and threshold deviation
+  smoothR=gminput('Range smoothing radius (no. pings; default no smoothing): ');
+  if( length(smoothR)==1 )
+   smoothS=gminput('Smoothing sigmas (default, 3): ');
+   if( length(smoothS)~=1 )
+    smoothS=3.0;
+   endif
+  endif
+ endif
+ 
+ %valid transect counter
+ nt=0;
+ BATHYMETRY={};
+
+ for nf=1:length(f_dir_raw)
+  
+  fn=f_dir_raw{nf};
+  
+  [fn_d,fn_n,fn_x]=fileparts(fn);
+
+  %load file data
+  if( smt )
+   fnmat=fullfile(fn_d, [fn_n '.mat']);
+
+   fnmat_dir=glob( fnmat );  
+   if( length(fnmat_dir)==1 )
+    load( fnmat, "P", "Q", "G");
+   else
+    [P, Q, G]=fmtfn(fn);
+    save("-float-binary", "-zip", fnmat, "P", "Q", "G");
+    disp(['Created ' fnmat '...']);
+   endif
+   
+  else
+   [P, Q, G]=fmtfn(fn);
+  endif
+
+  disp(['Loaded ' fn_n]);
+
+  %check if there is a bottom detection from the echosounder
+  if( sba==1 )
+   sounder_has_depth=0;
+   for sds=SONAR_DATA_SELECTION
+    sounder_has_depth=sounder_has_depth || isfield(SONAR_DATA{sds}.Q, 'depth');
+   endfor
+   if( ~sounder_has_depth )
+    disp(['Error: ' fn_n ' does not include depth data.']);
+    continue;  
+   endif
+  endif
+
+  %process channel if available
+  if( ~(length(P)>=channel && length(P{channel})>0) )
+   disp(['Error: ' fn_n ' does not have channel ' num2str(channel) ' data.']);
+   continue;
+  endif
+
+  %Channel P
+  Pch=P{channel};
+  Qch=Q{channel};
+  clear P Q
+
+  
+
+  %apply bottom detection algorithm
+  switch sba
+   case 1
+    R=[];
+
+   case 2
+
+    %apply Averaged bounce algorithm
+    R=getAverageHit(Pch, Qch, dep0);
+    
+   case 3
+   
+    %apply Max+threshold algorithm
+    R=getFirstHit(Pch, Qch, dep0, ndB, nndB);
+
+  endswitch
+
+  %apply smoothing if requested
+  if( length(smoothR)==1 )
+   R=smoothRange(R, smoothR, smoothS);
+  endif
+
+  %order data in matrices
+  nn=0;
+  lat=[];
+  lon=[];
+  tme=[];
+  dep=[];
+  for n=1:length(G)
+ 
+   if(sba>1)
+    dd=0.5*Qch(n).soundVelocity*(R(n)-2)*Qch(n).sampleInterval;
+   else %use echosounder depth
+    dd=Qch(n).depth;
+   endif
+
+   if( G(n).time<0 || dd<dep0 )
+    continue;
+   endif
+
+   nn=nn+1;
+   lat(nn)=G(n).latitude;
+   lon(nn)=G(n).longitude;
+   tme(nn)=G(n).time;
+   dep(nn)=dd;
+  
+  endfor
+
+  %store transect in bathymetry object
+  if( length(tme)>0 )
+   nt=nt+1;
+   BATHYMETRY{nt}.name=fn_n;
+   BATHYMETRY{nt}.latitude=lat;
+   BATHYMETRY{nt}.longitude=lon;
+   BATHYMETRY{nt}.time=tme;
+   BATHYMETRY{nt}.depth=dep;
+  endif
+
+  %free memory
+  clear Pch Qch G
+  clear R lat lon tme dep
+
+ endfor
+ 
+endfunction

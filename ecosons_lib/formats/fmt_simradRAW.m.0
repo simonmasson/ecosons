@@ -1,0 +1,282 @@
+%Reads a single-beam Simrad RAW sonar file into memory
+% [P HS PS At Al]=fmt_simradRAW(fname, channel, mxp)
+% P{}: channel cells with ping matrices: rows: ping no., columns: echo sample
+% HS: channel cells with transducer headers
+% PS: GPS + time data (time=-1: no data)
+% At, Al: athwart- and along-ship electrical angles
+% fname: RAW file filename
+function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
+
+ %Initialize returned values
+ P={};
+ At={};
+ Al={};
+ HS={};
+ PS=struct;
+  lPS=gpsRead("");
+
+ %number of arguments
+ request_As=(nargin>3);
+
+ %open file
+ sonarFile=fopen(fname, 'rb');
+
+ %sizes
+ max_channels=1;
+ max_counts=[0];
+ 
+ pass=0;
+ while(pass < 2)
+  pass=pass+1;
+  fseek(sonarFile, 0, "bof");
+
+  %Initialize counter
+  nPings=zeros(1,max_channels);
+
+  while( ~feof(sonarFile) )
+ 
+   dgrm=readRawDatagram(sonarFile);
+ 
+   if( pass==1 )
+   
+    if( strcmp(dgrm.type, 'RAW0') )
+    
+     %sample header
+     lH=dgrm.sample;
+     
+     ch=lH.channel;
+
+     if( ch > max_channels )
+      max_counts(max_channels+1:ch)=0;
+      max_channels=ch;
+      nPings(ch)=0;
+     endif
+
+     nPings(ch)=nPings(ch)+1;
+     max_counts(ch)=max(max_counts(ch),lH.count);
+    
+    endif
+    
+   else
+   
+    switch(dgrm.type)
+   
+    case 'NME0'
+     llPS=gpsRead(dgrm.nmea);
+     if( llPS.time >=0 )
+      lPS=llPS;
+     endif
+    
+    case 'RAW0'
+  
+     %sample header
+     lH=dgrm.sample;
+     ch=lH.channel;
+     
+     nPings(ch)=nPings(ch)+1;
+     
+     %header and last GPS data
+     HS{ch}(nPings(ch))=lH;
+     PS(nPings(ch))=lPS;
+     
+     %sample power
+     if( isfield(dgrm.data, "power") )
+        
+      ll=min(lH.count, length(dgrm.data.power));
+      P{ch}(nPings(ch),1:ll)=dgrm.data.power(1:ll);
+     
+     endif
+     
+     %sample angles
+     if( request_As ...
+      && isfield(dgrm.data, "angleAthwartship") ...
+      && isfield(dgrm.data, "angleAlongship") )
+  
+      ll=min(lH.count, length(dgrm.data.power));
+      At{ch}(nPings(ch),1:ll)=dgrm.data.angleAthwartship(1:ll);
+      Al{ch}(nPings(ch),1:ll)=dgrm.data.angleAlongship(1:ll);
+     
+     endif
+    
+    endswitch
+
+   endif
+    
+  endwhile
+
+  if( pass == 1 )
+   
+   for ch=1:max_channels
+    P{ch} =nan(nPings(ch),max_counts(ch));
+    if( request_As )
+     Al{ch}=nan(nPings(ch),max_counts(ch));
+     At{ch}=nan(nPings(ch),max_counts(ch));
+    endif
+   endfor
+   
+  endif
+
+ endwhile %pass
+ fclose(sonarFile);
+ 
+endfunction
+
+
+function lPS=gpsRead(nmea)
+
+ lPS.time=-1.0;
+ lPS.latitude=0.0;
+ lPS.longitude=0.0;
+ 
+ if( length(nmea) > 4 && strcmp(nmea(1:4), '$GPG') )
+ 
+  ss=strsplit(nmea(5:end), ',');
+  switch(ss{1})
+  case 'GA'
+   lPS.time=str2num(ss{2});
+   ll=ss{3};
+   lPS.latitude=str2num(ll(1:2))+str2num(ll(3:end))/60;
+    if( ss{4} == 'S' )
+     lPS.latitude=-lPS.latitude;
+    endif
+   ll=ss{5};
+   lPS.longitude=str2num(ll(1:3))+str2num(ll(4:end))/60;
+    if( ss{6} == 'W' )
+     lPS.longitude=-lPS.longitude;
+    endif
+   
+  case 'LL'
+   ll=ss{2};
+   lPS.latitude=str2num(ll(1:2))+str2num(ll(3:end))/60;
+    if( ss{3} == 'S' )
+     lPS.latitude=-lPS.latitude;
+    endif
+   ll=ss{4};
+   lPS.longitude=str2num(ll(1:3))+str2num(ll(4:end))/60;
+    if( ss{5} == 'W' )
+     lPS.longitude=-lPS.longitude;
+    endif
+   lPS.time=str2num(ss{6});
+   
+  endswitch
+ 
+ endif
+
+endfunction
+
+
+function dgrm=readRawDatagram(sonarFile)
+ dgrm=struct;
+ dgrm.length=fread(sonarFile,1,'int32','ieee-le');
+  if( length(dgrm.length) == 0 || dgrm.length==0 )
+   dgrm.type='END0';
+   return;
+  endif
+ dgrm.type=sprintf('%c', fread(sonarFile,4,'uchar'));
+ dgrm.date(2)=fread(sonarFile,1,'int32','ieee-le');
+ dgrm.date(1)=fread(sonarFile,1,'int32','ieee-le');
+
+ switch(dgrm.type)
+ case 'CON0'
+  hdr=struct;
+  hdr.surveyName=sprintf('%c', fread(sonarFile,128,'uchar'));
+  hdr.transectName=sprintf('%c', fread(sonarFile,128,'uchar'));
+  hdr.sounderName=sprintf('%c', fread(sonarFile,128,'uchar'));
+  hdr.version=sprintf('%c', fread(sonarFile, 30,'uchar'));
+   fread(sonarFile, 98,'uchar');
+  hdr.transducerCount=fread(sonarFile, 1,'int32','ieee-le');
+
+  dgrm.header=hdr;
+  
+  dgrm.transducer=struct;
+  for ntransducer=1:dgrm.header.transducerCount
+   tr_des=struct;
+   tr_des.channelId=sprintf('%c', fread(sonarFile,128,'uchar'));
+   tr_des.beamType=fread(sonarFile, 1,'int32','ieee-le');
+   tr_des.frequency=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.gain=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.equivalentBeamAngle=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.beamAlongship=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.beamAthwartship=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.sensitivityAlongship=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.sensitivityAthwartship=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.offsetAlongship=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.offsetAthwartship=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.posX=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.posY=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.posZ=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.dirX=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.dirY=fread(sonarFile, 1,'float32','ieee-le');
+   tr_des.dirZ=fread(sonarFile, 1,'float32','ieee-le');
+    fread(sonarFile, 8,'uchar');
+   tr_des.pulseLengthTable=fread(sonarFile, 5,'float32','ieee-le');
+    fread(sonarFile, 8,'uchar');
+   tr_des.gainTable=fread(sonarFile, 5,'float32','ieee-le');
+    fread(sonarFile, 8,'uchar');
+   tr_des.saCorrectionTable=fread(sonarFile, 5,'float32','ieee-le');
+    fread(sonarFile, 8,'uchar');
+   tr_des.gptSofwareVersion=sprintf('%c', fread(sonarFile,16,'uchar'));
+    fread(sonarFile, 20,'uchar');
+   
+
+   dgrm.transducer(ntransducer)=tr_des;
+  endfor
+  
+ case 'NME0'
+  dgrm.nmea=sprintf('%c',fread(sonarFile,dgrm.length-3*4,'uchar'));
+  %disp(['NMEA=' dgrm.nmea]);
+  
+ case 'TAG0'
+  dgrm.text=sprintf('%c',fread(sonarFile,dgrm.length-3*4,'uchar'));
+   if( length(dgrm.text)>80 )
+    dgrm.text=dgrm.text(1:80);
+   endif
+   disp(['TAG0=' dgrm.text]);
+   
+ case 'RAW0'
+  samp=struct;
+  
+  samp.channel=fread(sonarFile, 1,'int16','ieee-le');
+  samp.mode=fread(sonarFile, 1,'int16','ieee-le');
+  samp.transducerDepth=fread(sonarFile, 1,'float32','ieee-le');
+  samp.frequency=fread(sonarFile, 1,'float32','ieee-le');
+  samp.transmitPower=fread(sonarFile, 1,'float32','ieee-le');
+  samp.pulseLength=fread(sonarFile, 1,'float32','ieee-le');
+  samp.bandWidth=fread(sonarFile, 1,'float32','ieee-le');
+  samp.sampleInterval=fread(sonarFile, 1,'float32','ieee-le');
+  samp.soundVelocity=fread(sonarFile, 1,'float32','ieee-le');
+  samp.absorptionCoefficient=fread(sonarFile, 1,'float32','ieee-le');
+  samp.heave=fread(sonarFile, 1,'float32','ieee-le');
+  samp.roll=fread(sonarFile, 1,'float32','ieee-le');
+  samp.pitch=fread(sonarFile, 1,'float32','ieee-le');
+  samp.temperature=fread(sonarFile, 1,'float32','ieee-le');
+   fread(sonarFile, 12,'uchar');
+  samp.offset=fread(sonarFile, 1,'int32','ieee-le');
+  samp.count=fread(sonarFile, 1,'int32','ieee-le');
+ 
+  dat=struct;
+  if( samp.mode==1 || samp.mode==3 )
+   x=fread(sonarFile, samp.count,'int16','ieee-le');
+   dat.power=10*log(2)*x/256;
+  endif
+  if( samp.mode==2 || samp.mode==3 )
+   x=fread(sonarFile, 2*samp.count,'int8','ieee-le');
+   dat.angleAthwartship=180*x(1:2:end)/128; %most significant byte
+   dat.angleAlongship=180*x(2:2:end)/128;   %least significant byte
+  endif
+
+  dgrm.sample=samp;
+  dgrm.data=dat;
+ otherwise
+  disp(['Unknown datagram: ' dgrm.type]);
+  fread(sonarFile,dgrm.length-3*4,'uchar');
+ endswitch
+ 
+ dgrm_lc=fread(sonarFile,1,'int32','ieee-le');
+ if( dgrm_lc ~= dgrm.length )
+  error('File does not conform Simrad Raw Format');
+ endif
+
+endfunction
+
+
