@@ -28,9 +28,9 @@ function SLOPES=slopesFromBathymetry(BAT, krad)
    if( any(m) )
     zm=mean(z(m));
     zs=std(z(m));
-    m=(m & abs(z-zm)<2*zs);
-    [~,pa]=max( d(m & [1:length(z)]<p) );
-    [~,pb]=max( d(m & [1:length(z)]>p) );
+    m=(m & abs(z-zm)<=2*zs);
+    [~,pa]=max( d(m & [1:length(z)]<=p) );
+    [~,pb]=max( d(m & [1:length(z)]>=p) );
     if( ~isempty(pb) && ~isempty(pa) )
      tx(p)=x(pb)-x(pa)+1e-10;
      ty(p)=y(pb)-y(pa)+1e-10;
@@ -38,7 +38,7 @@ function SLOPES=slopesFromBathymetry(BAT, krad)
     endif
    endif
   endfor
-
+  
   SLOPES{nt}.slope=gg;
   SLOPES{nt}.slope_dir= ...
   SLOPES{nt}.trans_dir=(180/pi)*atan2(tx,ty);

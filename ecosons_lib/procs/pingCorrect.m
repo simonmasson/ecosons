@@ -25,8 +25,8 @@ function PP=pingCorrect(P,d,d0,dmx, alpha, algn_dB)
    lp0=4*dmx/d0;
    dlp=1+(lp0-lp);
    ckern=[ones(1,floor(dlp)), dlp-floor(dlp)];
-   PP=10*log10( conv( power(10, 0.1*PP), ckern)/dlp ); %Usar este
-   %PP=20*log10( conv( power(10, 0.5*0.1*PP), ckern)/dlp ); %Probar este novo?
+   PP=10*log10( conv( power(10, 0.1*PP), ckern)/dlp ); %Use this one
+   %!PP=20*log10( conv( power(10, 0.5*0.1*PP), ckern)/dlp ); %Test this one based on pressures?
    
    %ping alignment with the same 30 dB criterium
    if( ~exist('algn_dB') || length(algn_dB)==0 )

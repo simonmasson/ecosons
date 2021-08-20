@@ -59,7 +59,7 @@ function [err, err_desc]=ec_export_echobottom
     fprintf(fout, '\t%s', dta.name);
     fprintf(fout, '\t%d', n);
     %lat, lon
-    if( t>0 )
+    if( dta.G(n).time > 0 )
      fprintf(fout, '\t%0.6f\t%0.6f', dta.G(n).latitude, dta.G(n).longitude);
     else
      fprintf(fout, '\t%g\t%g', NaN, NaN);

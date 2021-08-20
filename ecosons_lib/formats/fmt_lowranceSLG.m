@@ -4,7 +4,7 @@
 % P{}: channel cells with ping matrices: rows: ping no., columns: echo sample
 % HS: channel cells with transducer headers
 % PS: GPS + time data (time=-1: no data)
-% fname: RAW file filename
+% fname: SLG file filename
 function [P,HS,PS]=fmt_lowranceSLG(fname)
  %l2=log2(10); %%%in case file is codified as binary logarithms
 
@@ -172,8 +172,8 @@ function lPS=gpsLowrance(X,Y,T)
   Y=Y-(256**3-1);
  endif
 
- lPS.latitude=dg*(2*atan(exp(Y/Sm))-pi/2); %
- lPS.longitude=dg*X/Sm; %
+ lPS.latitude=dg*(2*atan(exp(Y/Sm))-pi/2); 
+ lPS.longitude=dg*X/Sm; 
  lPS.time=T/1000;
 endfunction
 

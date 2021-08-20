@@ -53,7 +53,7 @@ function [x,y,zn,hm]=latlon2utmxy(zn, lat, lon)
  y=y*UTMScaleFactor;
   y=y+10000000*(y<0);
 
- %
+ % Define hemisphere
  hm=(lat>0)-(lat<=0);
 
 endfunction

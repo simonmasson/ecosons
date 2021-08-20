@@ -11,13 +11,13 @@ function img2esriascii(fn, I, x_min,x_max,y_min,y_max)
  f=fopen(fn, 'wt');
 
  %cell size
- c_size=(x_max-x_min)/(width-1);
+ c_size=(x_max-x_min)/width;
 
  %metadata
  fprintf(f, "NCOLS %d\n", width);
  fprintf(f, "NROWS %d\n", height);
- fprintf(f, "XLLCENTER %0.6f\n", x_min);
- fprintf(f, "YLLCENTER %0.6f\n", y_min);
+ fprintf(f, "XLLCORNER %0.6f\n", x_min);
+ fprintf(f, "YLLCORNER %0.6f\n", y_min);
  fprintf(f, "CELLSIZE %0.6f\n", c_size);
  fprintf(f, "NODATA_VALUE %d\n", -9999);
 

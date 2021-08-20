@@ -11,10 +11,10 @@ function [err, err_desc]=ec_bathymetry_resampling
  %terrain slope
  smth=gmmenu('Select slope computation:',...
              'External GIS application', ...  %1
-	     'Kernel derivative method', ...  %2
-	     'No slope computation',...       %3
+       	     'Kernel derivative method', ...  %2
+             'No slope computation',...       %3
              'Quit'...                        %4
-	     );
+	           );
 
  %apply slope method
  switch(smth)
@@ -142,8 +142,7 @@ function [err, err_desc]=ec_bathymetry_resampling
    return;
 
  endswitch
- 
-
+  
  %input resampling parameters
  srad=gminput('Gaussian resampling radius (standard deviation, 5 m): ');
  if( length(srad)==0 )
