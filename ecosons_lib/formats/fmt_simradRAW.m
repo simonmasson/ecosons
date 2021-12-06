@@ -7,10 +7,11 @@
 % fname: RAW file filename
 % RAW0: https://www.ngdc.noaa.gov/mgg/wcd/simradEK60manual.pdf
 % RAW3: https://www.kongsberg.com/globalassets/maritime/km-products/product-documents/413763_ea640_ref.pdf
-function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
+function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
 
  %Initialize returned values
  P={};
+ W={};
  At={};
  Al={};
  HS={};
@@ -21,7 +22,7 @@ function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
 
  %number of arguments
  request_As=[];
- request_Wf=[]; %!!!
+ request_Wf=[];
 
  %open file
  sonarFile=fopen(fname, 'rb');
@@ -29,6 +30,10 @@ function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
  %sizes
  max_channels=1;
  max_counts=[0];
+ 
+ %transceiver Z
+ chTrcvZ=[0];
+ filt=struct;
  
  pass=0;
  while(pass < 2)
@@ -44,14 +49,30 @@ function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
  
    if( pass==1 )
    
-    if( strcmp(dgrm.type, 'XML0') && isfield(dgrm.xml, 'Channel') )
-     for nc=1:length(dgrm.xml.Channel)
-      ch=find( strcmp(dgrm.xml.Channel(nc)._ChannelID, lChIds) );
-      if( ~any(ch) )
-       lChIds{end+1}=dgrm.xml.Channel(nc)._ChannelID;
-      endif
+    if( strcmp(dgrm.type, 'XML0') && isfield(dgrm.xml, 'Configuration') )
+     tcvs=dgrm.xml.Configuration.Transceivers.Transceiver;
+     for nt=1:length(tcvs)
+      tchn=dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel;
+      for nc=1:length(tchn)
+       ch=find( strcmp(dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel(nc)._ChannelID, lChIds) );
+       if( ~any(ch) )
+        lChIds{end+1}=dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel(nc)._ChannelID;
+        chTrcvZ(length(lChIds))=str2num(dgrm.xml.Configuration.Transceivers.Transceiver(nt)._Impedance);
+       endif
+      endfor
      endfor
     endif
+   
+%    if( strcmp(dgrm.type, 'XML0') && isfield(dgrm.xml, 'Channel') )
+%    %if( strcmp(dgrm.type, 'XML0') && strcmp(dgrm.xml.__name, 'Channels') )
+%     dgrm.xml
+%     for nc=1:length(dgrm.xml.Channel)
+%      ch=find( strcmp(dgrm.xml.Channel(nc)._ChannelID, lChIds) );
+%      if( ~any(ch) )
+%       lChIds{end+1}=dgrm.xml.Channel(nc)._ChannelID;
+%      endif
+%     endfor
+%    endif
   
     if( strcmp(dgrm.type, 'RAW0') || strcmp(dgrm.type, 'RAW3') )
     
@@ -67,7 +88,8 @@ function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
       max_counts(max_channels+1:ch)=0;
       max_channels=ch;
       nPings(ch)=0;
-      
+      request_Wf(ch)=0;
+      request_As(ch)=false;
      endif
 
      if( isfield(dgrm, 'data') && isfield(dgrm.data, 'waveform') )
@@ -96,28 +118,59 @@ function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
      endif
 
     case 'XML0'
-    
-     if( isfield(dgrm.xml, 'Channel') )
-      for nc=1:length(dgrm.xml.Channel)
-       ch=find( strcmp(dgrm.xml.Channel(nc)._ChannelID, lChIds) );
+
+     if( isfield(dgrm.xml, 'InitialParameter') )
+      chs=dgrm.xml.InitialParameter.Channels;
+      for nc=1:length(chs.Channel)
+       ch=find( strcmp(chs.Channel(nc)._ChannelID, lChIds) );
        lHS(ch).channel=ch;
-       lHS(ch).mode=str2num(dgrm.xml.Channel(nc)._ChannelMode);
-       lHS(ch).pulseForm=str2num(dgrm.xml.Channel(nc)._PulseForm);
-       if( isfield(dgrm.xml.Channel(nc), '_Frequency') && !isempty(dgrm.xml.Channel(nc)._Frequency) )
-        lHS(ch).frequency=str2num(dgrm.xml.Channel(nc)._Frequency);
-       elseif( isfield(dgrm.xml.Channel(nc), '_FrequencyStart') )
-        lHS(ch).frequency=[str2num(dgrm.xml.Channel(nc)._FrequencyStart) str2num(dgrm.xml.Channel(nc)._FrequencyEnd)];
+       lHS(ch).mode=str2num(chs.Channel(nc)._ChannelMode);
+       lHS(ch).pulseForm=str2num(chs.Channel(nc)._PulseForm);
+       if( isfield(chs.Channel(nc), '_Slope') )
+        lHS(ch).slope=str2num(chs.Channel(nc)._Slope);
+       else
+        lHS(ch)=0.0;
+       endif
+       if( isfield(chs.Channel(nc), '_Frequency') && !isempty(chs.Channel(nc)._Frequency) )
+        lHS(ch).frequency=str2num(chs.Channel(nc)._Frequency);
+       elseif( isfield(chs.Channel(nc), '_FrequencyStart') )
+        lHS(ch).frequency=[str2num(chs.Channel(nc)._FrequencyStart) str2num(chs.Channel(nc)._FrequencyEnd)];
        else
         lHS(ch).frequency=NaN;
         warning('Channel datagram without frequency?');
        endif
        lHS(ch).bandWidth=0;
-       lHS(ch).pulseLength=str2num(dgrm.xml.Channel(nc)._PulseDuration);
-       lHS(ch).sampleInterval=str2num(dgrm.xml.Channel(nc)._SampleInterval);
-       lHS(ch).transmitPower=str2num(dgrm.xml.Channel(nc)._TransmitPower);
-     endfor
+       lHS(ch).pulseLength=str2num(chs.Channel(nc)._PulseDuration);
+       lHS(ch).sampleInterval=str2num(chs.Channel(nc)._SampleInterval);
+       lHS(ch).transmitPower=str2num(chs.Channel(nc)._TransmitPower);
+      endfor
      endif
-     
+
+     if( isfield(dgrm.xml, 'Parameter') )
+      chn=dgrm.xml.Parameter.Channel;
+      ch=find( strcmp(chn._ChannelID, lChIds) );
+      lHS(ch).channel=ch;
+      lHS(ch).mode=str2num(chn._ChannelMode);
+      lHS(ch).pulseForm=str2num(chn._PulseForm);
+      if( isfield(chn, '_Slope') )
+       lHS(ch).slope=str2num(chn._Slope);
+      else
+       lHS(ch)=0.0;
+      endif
+      if( isfield(chn, '_Frequency') && !isempty(chn._Frequency) )
+       lHS(ch).frequency=str2num(chn._Frequency);
+      elseif( isfield(chn, '_FrequencyStart') )
+       lHS(ch).frequency=[str2num(chn._FrequencyStart) str2num(chn._FrequencyEnd)];
+      else
+       lHS(ch).frequency=NaN;
+       warning('Channel datagram without frequency?');
+      endif
+      lHS(ch).bandWidth=0;
+      lHS(ch).pulseLength=str2num(chn._PulseDuration);
+      lHS(ch).sampleInterval=str2num(chn._SampleInterval);
+      lHS(ch).transmitPower=str2num(chn._TransmitPower);
+     endif
+   
      if( isfield(dgrm.xml, 'Environment') ) %only one per file?
       for ch=1:length(lChIds)
        lHS(ch).transducerDepth=( depth=str2num(dgrm.xml.Environment._Depth) );
@@ -206,27 +259,39 @@ function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
         
       ll=min(lH.count, length(dgrm.data.power));
       P{ch}(nPings(ch),1:ll)=dgrm.data.power(1:ll);
-     
-     endif
-     
-     %sample angles
-     if( request_As ...
-      && isfield(dgrm.data, "angleAthwartship") ...
-      && isfield(dgrm.data, "angleAlongship") )
+          
+      %sample angles
+      if( request_As(ch) ...
+       && isfield(dgrm.data, "angleAthwartship") ...
+       && isfield(dgrm.data, "angleAlongship") )
   
-      ll=min(lH.count, length(dgrm.data.power));
-      At{ch}(nPings(ch),1:ll)=dgrm.data.angleAthwartship(1:ll);
-      Al{ch}(nPings(ch),1:ll)=dgrm.data.angleAlongship(1:ll);
+       ll=min(lH.count, length(dgrm.data.power));
+       At{ch}(nPings(ch),1:ll)=dgrm.data.angleAthwartship(1:ll);
+       Al{ch}(nPings(ch),1:ll)=dgrm.data.angleAlongship(1:ll);
+     
+      endif
      
      endif
-
+      
      %waveform
      if( isfield(dgrm.data, "waveform") )
       
       ll=min(lH.count, size(dgrm.data.waveform,1));
-      P{ch}(nPings(ch),1:ll,:)=dgrm.data.waveform(1:ll,:);
-     
+      W{ch}(nPings(ch),1:ll,:)=dgrm.data.waveform(1:ll,:);
+      P{ch}(nPings(ch),1:ll)=20*log10( abs( mean(dgrm.data.waveform(1:ll,:),2) ) );
+            
+      if( request_As(ch) )
+       [paAt,paAl]=phaseAngle(W{ch}(nPings(ch),1:ll,:));
+       At{ch}(nPings(ch),1:ll)=paAt;
+       Al{ch}(nPings(ch),1:ll)=paAl;
+      endif
+    
      endif
+    
+    case 'FIL1'
+     ch=find( strcmp(dgrm.channelID, lChIds) );
+     filt(ch).noOfCoefficients(dgrm.stage)=dgrm.noOfCoefficients;
+     filt(ch).decimationFactor(dgrm.stage)=dgrm.decimationFactor;
     
     endswitch
 
@@ -238,7 +303,8 @@ function [P,HS,PS,At,Al]=fmt_simradRAW(fname)
    
    for ch=1:max_channels
     if( request_Wf(ch) )
-     P{ch} = nan(nPings(ch),max_counts(ch), request_Wf(ch));
+     P{ch} = nan(nPings(ch),max_counts(ch));
+     W{ch} = nan(nPings(ch),max_counts(ch), request_Wf(ch));
     else
      P{ch} = nan(nPings(ch),max_counts(ch));
     endif
@@ -408,7 +474,6 @@ function dgrm=readRawDatagram(sonarFile, ctx)
   %XML0: Sensor
   %XML0: Ping
   
-  
  case 'TAG0'
   dgrm.text=sprintf('%c',fread(sonarFile,dgrm.length-3*4,'uchar'));
    if( length(dgrm.text)>80 )
@@ -489,6 +554,17 @@ function dgrm=readRawDatagram(sonarFile, ctx)
   dgrm.sample=samp;
   dgrm.data=dat;
  
+case 'FIL1'
+  dgrm.stage=fread(sonarFile, 1,'int16','ieee-le');
+  fread(sonarFile, 1,'char'); %!!!spec says 2 chars!
+  dgrm.filterType=fread(sonarFile, 1,'char');
+  dgrm.channelID=char( fread(sonarFile, 128,'char')' );
+   dgrm.channelID=dgrm.channelID( dgrm.channelID ~= 0 );
+  dgrm.noOfCoefficients=fread(sonarFile, 1,'int16','ieee-le');
+  dgrm.decimationFactor=fread(sonarFile, 1,'int16','ieee-le');
+  x=fread(sonarFile, 2*dgrm.noOfCoefficients,'float32','ieee-le');
+  dgrm.coefficients=x(1:2:end)+j*x(2:2:end);
+
  otherwise
   disp(['Unknown datagram: ' dgrm.type]);
   fread(sonarFile,dgrm.length-3*4,'uchar');
@@ -501,7 +577,7 @@ function dgrm=readRawDatagram(sonarFile, ctx)
 
 endfunction
 
-
+%Sound attenuation
 function alpha=alphaAinslieMcColm(f,T,S,D,pH) %Ainslie & McColm, J. Acoust. Soc. Am., Vol. 103, No. 3, March 1998
  f=f/1000; %f in kHz
  D=D/1000; %D in km
@@ -529,4 +605,17 @@ function alpha=alphaAinslieMcColm(f,T,S,D,pH) %Ainslie & McColm, J. Acoust. Soc.
  %Total absorption (dB/km)
  alpha=(Boric+MgSO4+H2O);
 
+endfunction
+
+%phase angle from Waveform for different beam types
+% currently only beamtype 1 with 4 signals
+function [paAt,paAl]=phaseAngle(W, bt)
+ paAt=zeros(size(W)(1:end-1));
+ paAl=zeros(size(W)(1:end-1));
+ L=prod(size(W)(1:end-1));
+ switch( size(W)(end) )
+  case 4
+    paAt(:)=arg( (W([1:L]+(1-1)*L)+W([1:L]+(4-1)*L)).*conj(W([1:L]+(2-1)*L)+W([1:L]+(3-1)*L)) );
+    paAl(:)=arg( (W([1:L]+(1-1)*L)+W([1:L]+(2-1)*L)).*conj(W([1:L]+(3-1)*L)+W([1:L]+(4-1)*L)) );
+ endswitch
 endfunction
