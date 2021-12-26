@@ -1,15 +1,20 @@
 % [xmlout, tagC, tagE]=parseXML(txt, xmlin)
-% Parses a text holding xml document
-% txt: xml document or part of it
+% Called as:
+%  xmlout = parseXML(txt)
+% Parses a text containing an xml document
+% txt: xml document or fragment (complete elements)
 % xmlin: the tag holding the document (or an empty document)
+%  used only internally for recursive calls
 % xmlout: octave struct holding the tag/document
-%  xmlout._name: tag name
-%  xmlout._prefix: tag prefix
-%  xmlout._attribute: attribute
-%  xmlout.child: child xml tag
-%  xmlout.children(): same tag children list
+%  xmlout.__name: tag name
+%  xmlout.__prefix: tag prefix
+%  xmlout.__attribute: attribute
+%  xmlout.child: child xml tag (field name is tag name)
+%  xmlout.children(): same tag children list (field names are tag names)
 % tagC: boolean indicating whether the tag has been closed
+%  used only internally for recursive calls
 % tagE: position of txt where parsing has stopped (next character)
+%  used only internally for recursive calls
 function [xmlout, tagC, tagE]=parseXML(txt, xmlin, tagB)
   
   %straighten the text out (no newlines)
