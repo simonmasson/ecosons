@@ -28,7 +28,7 @@ function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
  sonarFile=fopen(fname, 'rb');
 
  %sizes
- max_channels=1;
+ max_channels=0;
  max_counts=[0];
  
  %transceiver Z
@@ -93,13 +93,14 @@ function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
      endif
 
      if( isfield(dgrm, 'data') && isfield(dgrm.data, 'waveform') )
-      request_Wf(ch)=size(dgrm.data.waveform,2);
+      if( nargout > 5 )
+        request_Wf(ch)=size(dgrm.data.waveform,2);
+      endif
+      request_As(ch)=(nargout>3);
      endif
 
      if( isfield(dgrm, 'data') && isfield(dgrm.data, 'angleAthwartship') )
       request_As(ch)=(nargout>3);
-     else
-      request_As(ch)=false;
      endif
 
      nPings(ch)=nPings(ch)+1;
@@ -136,10 +137,10 @@ function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
        elseif( isfield(chs.Channel(nc), '_FrequencyStart') )
         lHS(ch).frequency=[str2num(chs.Channel(nc)._FrequencyStart) str2num(chs.Channel(nc)._FrequencyEnd)];
        else
-        lHS(ch).frequency=NaN;
+        lHS(ch).frequency=0;
         warning('Channel datagram without frequency?');
        endif
-       lHS(ch).bandWidth=0;
+       lHS(ch).bandWidth=diff([lHS(ch).frequency 0])(1);
        lHS(ch).pulseLength=str2num(chs.Channel(nc)._PulseDuration);
        lHS(ch).sampleInterval=str2num(chs.Channel(nc)._SampleInterval);
        lHS(ch).transmitPower=str2num(chs.Channel(nc)._TransmitPower);
@@ -162,10 +163,10 @@ function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
       elseif( isfield(chn, '_FrequencyStart') )
        lHS(ch).frequency=[str2num(chn._FrequencyStart) str2num(chn._FrequencyEnd)];
       else
-       lHS(ch).frequency=NaN;
+       lHS(ch).frequency=0;
        warning('Channel datagram without frequency?');
       endif
-      lHS(ch).bandWidth=0;
+      lHS(ch).bandWidth=diff([lHS(ch).frequency 0])(1);
       lHS(ch).pulseLength=str2num(chn._PulseDuration);
       lHS(ch).sampleInterval=str2num(chn._SampleInterval);
       lHS(ch).transmitPower=str2num(chn._TransmitPower);
@@ -200,6 +201,7 @@ function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
     
      if( length(dgrm.transducer) > 0 )
       for ch=1:length(lChIds)
+       lHS(ch).beamType=dgrm.transducer(1).beamType;
        lHS(ch).gain=dgrm.transducer(1).gain;
        lHS(ch).equivalentBeamAngle=dgrm.transducer(1).equivalentBeamAngle;
       endfor
@@ -278,14 +280,25 @@ function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
       
       ll=min(lH.count, size(dgrm.data.waveform,1));
       W{ch}(nPings(ch),1:ll,:)=dgrm.data.waveform(1:ll,:);
-      P{ch}(nPings(ch),1:ll)=20*log10( abs( mean(dgrm.data.waveform(1:ll,:),2) ) );
+      
+      dTX=round(2*lH.pulseLength/lH.sampleInterval); %!número de bins que contienen la señal transmitida
+      P{ch}(nPings(ch),1:ll-dTX)=20*log10( abs( mean(dgrm.data.waveform(1+dTX:ll,:),2) ) );
             
       if( request_As(ch) )
-       [paAt,paAl]=phaseAngle(W{ch}(nPings(ch),1:ll,:));
-       At{ch}(nPings(ch),1:ll)=paAt;
-       Al{ch}(nPings(ch),1:ll)=paAl;
+       if( isfield(lH, 'beamType') )
+        bt=lH.beamType;
+       else
+        bt=0*(request_Wf(ch)==1)+1*(request_Wf(ch)==4)+17*(request_Wf(ch)==3);
+       endif
+       if( bt>0 )
+        [paAt,paAl]=phaseAngle(squeeze(W{ch}(nPings(ch),1:ll,:)), bt);
+        At{ch}(nPings(ch),1:ll-dTX)=paAt(1+dTX:end);
+        Al{ch}(nPings(ch),1:ll-dTX)=paAl(1+dTX:end);    
+       else
+        At{ch}(nPings(ch),1:ll-dTX)=nan(1,ll-dTX);
+        Al{ch}(nPings(ch),1:ll-dTX)=nan(1,ll-dTX);
+       endif
       endif
-    
      endif
     
     case 'FIL1'
@@ -610,12 +623,22 @@ endfunction
 %phase angle from Waveform for different beam types
 % currently only beamtype 1 with 4 signals
 function [paAt,paAl]=phaseAngle(W, bt)
- paAt=zeros(size(W)(1:end-1));
- paAl=zeros(size(W)(1:end-1));
- L=prod(size(W)(1:end-1));
- switch( size(W)(end) )
-  case 4
-    paAt(:)=arg( (W([1:L]+(1-1)*L)+W([1:L]+(4-1)*L)).*conj(W([1:L]+(2-1)*L)+W([1:L]+(3-1)*L)) );
-    paAl(:)=arg( (W([1:L]+(1-1)*L)+W([1:L]+(2-1)*L)).*conj(W([1:L]+(3-1)*L)+W([1:L]+(4-1)*L)) );
+ sW=size(W);
+ L=prod(sW(1:end-1));
+ paAt=reshape(zeros(L,1), [1,sW(1:end-1)]);
+ paAl=reshape(zeros(L,1), [1,sW(1:end-1)]);
+ switch( bt )
+  case 1 %Transducers having four sectors: Starboard Aft, Port Aft, Port Fore, Starboard Fore
+    paAl(:)=arg( conj(W(:,1)+W(:,2)).*(W(:,3)+W(:,4)) );
+    paAt(:)=arg( conj(W(:,2)+W(:,3)).*(W(:,1)+W(:,4)) );
+  case 17 %Transducers having three sectors: Starboard Aft, Port Aft, Forward
+    paAl(:)=( arg( conj(W(:,1)).*W(:,3) ) + arg( conj(W(:,2)).*W(:,3) ) )/sqrt(3);
+    paAt(:)=( arg( conj(W(:,2)).*W(:,3) ) - arg( conj(W(:,1)).*W(:,3) ) );
+  case {49,65,81} %Transducers having three sectors and a centre element: Starboard Aft, Port Aft, Forward, Centre
+    paAl(:)=( arg( conj(W(:,1)+W(:,4)).*(W(:,3)+W(:,4)) ) + arg( conj(W(:,2)+W(:,4)).*(W(:,3)+W(:,4)) ) )/sqrt(3);
+    paAt(:)=( arg( conj(W(:,2)+W(:,4)).*(W(:,3)+W(:,4)) ) - arg( conj(W(:,1)+W(:,4)).*(W(:,3)+W(:,4)) ) );
+  case 97 %Transducers having four sectors: Fore Starboard, Aft Port, Aft starboard, Fore Port
+    paAt(:)=arg( conj(W(:,2)).*W(:,1) );
+    paAl(:)=arg( conj(W(:,4)).*W(:,3) );
  endswitch
 endfunction
