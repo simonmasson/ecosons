@@ -9,8 +9,7 @@
 % fname: RAW file filename
 % RAW0: https://www.ngdc.noaa.gov/mgg/wcd/simradEK60manual.pdf
 % RAW3: https://www.kongsberg.com/globalassets/maritime/km-products/product-documents/413763_ea640_ref.pdf
-% function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
-fname = '../L0002-D20140719-T091658-EA400.raw';
+function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
 
 %Initialize returned values
 P={};
@@ -162,8 +161,4 @@ while(pass < 2)
 end %pass
 fclose(sonarFile);
 
-% end
-figure();
-imagesc(P{1}');
-figure();
-imagesc(P{2}');
+end
