@@ -9,6 +9,12 @@ dgrm.type=sprintf('%c', fread(sonarFile,4,'uchar'));
 dgrm.date(2)=fread(sonarFile,1,'int32','ieee-le');
 dgrm.date(1)=fread(sonarFile,1,'int32','ieee-le');
 
+if dgrm.type~='RAW0'
+    if dgrm~='NME0'
+        disp('warn')
+    end
+end
+
 switch(dgrm.type)
     case 'CON0'
         hdr=struct;
@@ -59,28 +65,6 @@ switch(dgrm.type)
         dgrm.nmea=sprintf('%c',fread(sonarFile,dgrm.length-3*4,'uchar'));
         %!!!disp(['NMEA=' dgrm.nmea]);
 
-    case 'XML0'
-        txt=sprintf('%c',fread(sonarFile,dgrm.length-3*4,'uchar'));
-        dgrm.xml=parseXML(txt);
-        %XML0: Transducers.Transducer(1:N), Transceivers.Transceiver(1:N), etc.
-        %XML0: Channel(1:N).{Frequency,PulseDuration,SampleInterval,TransmitPower,SoundVelocity} también un único Channel
-        %XML0: Environment.{Depth, SoundSpeed}
-        %XML0: Sensor
-        %XML0: Ping
-
-    case 'TAG0'
-        dgrm.text=sprintf('%c',fread(sonarFile,dgrm.length-3*4,'uchar'));
-        if( length(dgrm.text)>80 )
-            dgrm.text=dgrm.text(1:80);
-        end
-        %!!!disp(['TAG0=' dgrm.text]);
-
-    case 'MRU0'
-        dgrm.heave=fread(sonarFile,1,'float32');
-        dgrm.roll=fread(sonarFile,1,'float32');
-        dgrm.pitch=fread(sonarFile,1,'float32');
-        dgrm.heading=fread(sonarFile,1,'float32');
-
     case 'RAW0'
         samp=struct;
 
@@ -115,49 +99,6 @@ switch(dgrm.type)
 
         dgrm.sample=samp;
         dgrm.data=dat;
-
-    case 'RAW3'
-        samp.channelId=sprintf('%c', fread(sonarFile,128,'uchar'));
-        samp.channelId=samp.channelId( samp.channelId ~= 0 );
-        samp.dataType=fread(sonarFile, 1,'int16','ieee-le');
-        samp.spare=fread(sonarFile, 1,'int16','ieee-le');
-        samp.offset=fread(sonarFile, 1,'int32','ieee-le');
-        samp.count=fread(sonarFile, 1,'int32','ieee-le');
-
-        dat=struct;
-        if( bitand(samp.dataType,1) ) %Power: integer "compressed"
-            x=fread(sonarFile, samp.count,'int16','ieee-le');
-            dat.power=10*log10(2)*x/256;
-        end
-        if( bitand(samp.dataType,2) ) %Angle: integer encoded
-            x=fread(sonarFile, 2*samp.count,'int8','ieee-le');
-            dat.angleAthwartship=180*x(1:2:end)/128; %most significant byte
-            dat.angleAlongship=180*x(2:2:end)/128;   %least significant byte
-        end
-        if( bitand(samp.dataType,4) ) %Waveform: complex float 16
-            cperSample=floor(samp.dataType/256);
-            x=fread(sonarFile, 2*cperSample*samp.count,'float16','ieee-le');
-            dat.waveform=reshape(x(1:2:end)+1i*x(2:2:end), cperSample, samp.count)';
-        end
-        if( bitand(samp.dataType,8) ) %Waveform: complex float 32
-            cperSample=floor(samp.dataType/256);
-            x=fread(sonarFile, 2*cperSample*samp.count,'float32','ieee-le');
-            dat.waveform=reshape(x(1:2:end)+1i*x(2:2:end), cperSample, samp.count)';
-        end
-
-        dgrm.sample=samp;
-        dgrm.data=dat;
-
-    case 'FIL1'
-        dgrm.stage=fread(sonarFile, 1,'int16','ieee-le');
-        fread(sonarFile, 1,'char'); %!!!spec says 2 chars!
-        dgrm.filterType=fread(sonarFile, 1,'char');
-        dgrm.channelID=char( fread(sonarFile, 128,'char')' );
-        dgrm.channelID=dgrm.channelID( dgrm.channelID ~= 0 );
-        dgrm.noOfCoefficients=fread(sonarFile, 1,'int16','ieee-le');
-        dgrm.decimationFactor=fread(sonarFile, 1,'int16','ieee-le');
-        x=fread(sonarFile, 2*dgrm.noOfCoefficients,'float32','ieee-le');
-        dgrm.coefficients=x(1:2:end)+1i*x(2:2:end);
 
     otherwise
         disp(['Unknown datagram: ' dgrm.type]);
