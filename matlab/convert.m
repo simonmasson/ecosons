@@ -95,6 +95,16 @@ while(pass < 2)
                         lPS=llPS;
                     end
 
+                case 'CON0'
+
+                    if( length(dgrm.transducer) > 0 )
+                        for ch=1:length(lChIds)
+                            lHS(ch).beamType=dgrm.transducer(1).beamType;
+                            lHS(ch).gain=dgrm.transducer(1).gain;
+                            lHS(ch).equivalentBeamAngle=dgrm.transducer(1).equivalentBeamAngle;
+                        end
+                    end
+
                 case 'RAW0'
 
                     %sample header
