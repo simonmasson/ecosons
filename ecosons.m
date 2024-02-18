@@ -18,7 +18,8 @@
 % Launcher of the chosen ecosons application
 
 %clear all variables
-clear all
+%clear all
+global SONAR_DATA;
 
 %get ecosons file directory
 ec_dir=strrep(mfilename('fullpathext'), 'ecosons.m', '');
