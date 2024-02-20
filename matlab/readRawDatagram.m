@@ -61,7 +61,8 @@ switch(dgrm.type)
 
     case 'XML0'
         txt=sprintf('%c',fread(sonarFile,dgrm.length-3*4,'uchar'));
-        dgrm.xml=parseXML(txt);
+        dgrm.xml=xmlreadstring(txt);
+
         %XML0: Transducers.Transducer(1:N), Transceivers.Transceiver(1:N), etc.
         %XML0: Channel(1:N).{Frequency,PulseDuration,SampleInterval,TransmitPower,SoundVelocity} también un único Channel
         %XML0: Environment.{Depth, SoundSpeed}
@@ -165,8 +166,8 @@ switch(dgrm.type)
 end
 
 dgrm_lc=fread(sonarFile,1,'int32','ieee-le');
-if( dgrm_lc ~= dgrm.length )
-    error('File does not conform Simrad Raw Format');
-end
+% if( dgrm_lc ~= dgrm.length )
+%     error('File does not conform Simrad Raw Format');
+% end
 
 end

@@ -1,4 +1,7 @@
 %% This file is a modified version of `/ecosons_lib/formats/fmt_simradRAW.m`
+clc
+close all
+clear
 
 %Reads a single-beam Simrad RAW sonar file into memory
 % [P HS PS At Al]=fmt_simradRAW(fname, channel, mxp)
@@ -10,7 +13,9 @@
 % RAW0: https://www.ngdc.noaa.gov/mgg/wcd/simradEK60manual.pdf
 % RAW3: https://www.kongsberg.com/globalassets/maritime/km-products/product-documents/413763_ea640_ref.pdf
 % function [P,HS,PS,At,Al,W,filt]=fmt_simradRAW(fname)
-fname = 'ex2.raw';
+% fname = 'file2.raw';
+fname = '../L0002-D20140719-T091658-EA400.raw';
+% fname = '../L0003-D20140719-T092547-EA400.raw';
 
 %Initialize returned values
 P={};
@@ -57,13 +62,13 @@ while(pass < 2)
                 for nt=1:length(tcvs)
                     tchn=dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel;
                     for nc=1:length(tchn)
-                        disp(dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel(nc));
                         disp('warn!');
-                        %                         ch=find( strcmp(dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel(nc)._ChannelID, lChIds) );
-                        %                         if( ~any(ch) )
-                        %                             lChIds{end+1}=dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel(nc)._ChannelID;
-                        %                             chTrcvZ(length(lChIds))=str2num(dgrm.xml.Configuration.Transceivers.Transceiver(nt)._Impedance);
-                        %                         end
+                        disp(dgrm.xml.Configuration);
+%                         ch=find( strcmp(dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel(nc)._ChannelID, lChIds) );
+%                         if( ~any(ch) )
+%                             lChIds{end+1}=dgrm.xml.Configuration.Transceivers.Transceiver(nt).Channels.Channel(nc)._ChannelID;
+%                             chTrcvZ(length(lChIds))=str2num(dgrm.xml.Configuration.Transceivers.Transceiver(nt)._Impedance);
+%                         end
                     end
                 end
             end
