@@ -1,4 +1,4 @@
-## Copyright (C) 2013 Daniel Rodríguez Pérez
+## Copyright (C) 2013 Daniel Rodrï¿½guez Pï¿½rez
 ##
 ## This program is free software; you can redistribute it and/or modify it
 ## under the terms of the GNU General Public License as published by
@@ -18,8 +18,7 @@
 % Launcher of the chosen ecosons application
 
 %clear all variables
-%clear all
-global SONAR_DATA;
+clear all
 
 %get ecosons file directory
 ec_dir=strrep(mfilename('fullpathext'), 'ecosons.m', '');
